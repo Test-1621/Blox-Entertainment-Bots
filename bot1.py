@@ -199,7 +199,6 @@ async def check(ctx: commands.Context):
         if avatar_url:
             embed.set_thumbnail(url=avatar_url)
         await log_channel.send(embed=embed)
-
 # ===== INFO COMMAND (FIXED + ADMIN LOGGING) =====
 @bot.command()
 async def info(ctx: commands.Context, target: str = None):
