@@ -7,9 +7,20 @@ from datetime import datetime
 
 BOT_NAME = "Blox Entertainment Information"
 BOT_PREFIX = "!"
-TOKEN = os.getenv("INFORMATION_TICKET")
 OWNER_ROLE_NAME = "Blox Entertainment Staff"
 LOG_CHANNEL_NAME = "administration-logs"  # name of the logging channel
+
+# ===== TOKEN (robust: tries multiple environment variable names) =====
+TOKEN = (
+    os.getenv("INFORMATION_TICKET")
+    or os.getenv("BOT2_TOKEN")
+    or os.getenv("DISCORD_BOT_TOKEN")
+)
+
+if TOKEN:
+    print("✅ Token loaded (INFORMATION_TICKET/BOT2_TOKEN/DISCORD_BOT_TOKEN).")
+else:
+    print("❌ No token found. Set INFORMATION_TICKET (or BOT2_TOKEN / DISCORD_BOT_TOKEN) in Secrets/Env.")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -76,6 +87,8 @@ def truncate_field(text, limit=1024):
     if text is None:
         return "None"
     return text if len(text) <= limit else text[:limit-3] + "..."
+
+# ===== message command and rest of the bot code remains unchanged =====
 
 @bot.command()
 @commands.has_role(OWNER_ROLE_NAME)
@@ -188,7 +201,12 @@ async def on_ready():
     print(f"✅ Logged in as {BOT_NAME} ({bot.user})")
 
 async def run_bot():
+    if not TOKEN:
+        print("❌ bot2: No token — not starting.")
+        return
     await bot.start(TOKEN)
 
 if __name__ == "__main__":
+    if not TOKEN:
+        raise SystemExit("❌ No token set. Set INFORMATION_TICKET (or BOT2_TOKEN / DISCORD_BOT_TOKEN).")
     asyncio.run(run_bot())
