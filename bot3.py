@@ -6,9 +6,17 @@ import json
 from datetime import datetime
 from verification_manager import VerificationManager  # keep your existing verification manager
 
-TOKEN = os.getenv("BOT3_ADVERTISE")
-if not TOKEN:
-    raise ValueError("BOT3_ADVERTISE not found in Replit Secrets.")
+# ===== TOKEN HANDLING (robust) =====
+TOKEN = (
+    os.getenv("BOT3_ADVERTISE")
+    or os.getenv("BOT3_TOKEN")
+    or os.getenv("DISCORD_BOT3_TOKEN")
+)
+
+if TOKEN:
+    print("✅ Token loaded (BOT3_ADVERTISE / BOT3_TOKEN / DISCORD_BOT3_TOKEN).")
+else:
+    raise ValueError("❌ No token found. Set BOT3_ADVERTISE, BOT3_TOKEN, or DISCORD_BOT3_TOKEN in Secrets/Env.")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -311,8 +319,13 @@ async def on_ready():
     print(f"[BOT3] Logged in as {bot.user} (ID: {bot.user.id})")
 
 async def run_bot():
+    if not TOKEN:
+        print("❌ bot3: No token — not starting.")
+        return
     await bot.start(TOKEN)
 
 if __name__ == "__main__":
     import asyncio
+    if not TOKEN:
+        raise SystemExit("❌ No token set. Set BOT3_ADVERTISE, BOT3_TOKEN, or DISCORD_BOT3_TOKEN.")
     asyncio.run(run_bot())
