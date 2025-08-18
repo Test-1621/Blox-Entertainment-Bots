@@ -1,3 +1,8 @@
+import os
+print("BOT1_TOKEN:", os.getenv("BOT1_TOKEN"))
+print("BOT2_TOKEN:", os.getenv("INFORMATION_TICKET"))
+print("BOT3_TOKEN:", os.getenv("BOT3_ADVERTISE"))
+
 import asyncio
 import importlib
 
