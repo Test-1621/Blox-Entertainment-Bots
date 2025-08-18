@@ -141,7 +141,6 @@ async def advertise(ctx):
             print(f"[AD_LOG] Failed to send embed: {e}")
 
     await ctx.reply("✅ Your advertisement request has been submitted! You’ll receive a DM when it’s reviewed.", mention_author=True)
-
 # ===== COMMAND: !advertisement_requests =====
 def _is_staff(member: discord.Member) -> bool:
     return any(r.id == ROLE_ID_STAFF for r in member.roles)
