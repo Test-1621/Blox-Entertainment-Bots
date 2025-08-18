@@ -4,9 +4,9 @@ from discord.ui import View, Select
 import os
 import json
 from datetime import datetime
-from verification_manager import VerificationManager  # keep your existing verification manager
+from verification_manager import VerificationManager  # Keep your existing verification manager
 
-# ===== TOKEN HANDLING (robust) =====
+# ===== TOKEN HANDLING =====
 TOKEN = (
     os.getenv("BOT3_ADVERTISE")
     or os.getenv("BOT3_TOKEN")
@@ -64,6 +64,7 @@ def _guild_pending_ads(guild_id):
 # ===== STAFF CHECK =====
 def _is_staff(member: discord.Member) -> bool:
     return any(r.id == ROLE_ID_STAFF for r in member.roles)
+
 # ===== COMMAND: !advertise =====
 @bot.command()
 async def advertise(ctx):
@@ -177,7 +178,6 @@ async def advertisement_requests(ctx):
         await ctx.reply("📭 No pending advertisement requests.", mention_author=True)
         return
 
-    # Select request
     selector = AdSelect(pending, ctx.guild)
     view1 = View(timeout=90)
     view1.add_item(selector)
@@ -199,7 +199,6 @@ async def advertisement_requests(ctx):
         await ctx.send("⚠️ That advertisement request is no longer pending.")
         return
 
-    # Decision dropdown
     dec_select = DecisionSelect()
     view2 = View(timeout=60)
     view2.add_item(dec_select)
@@ -219,7 +218,6 @@ async def advertisement_requests(ctx):
         await msg2.edit(content="⏱️ Timed out. Decision not recorded.", view=None)
         return
 
-    # Comments (optional)
     await ctx.send("💬 Enter any **comments** for this decision (or type `none`). You have 2 minutes.")
 
     def _comment_check(m: discord.Message):
@@ -233,7 +231,6 @@ async def advertisement_requests(ctx):
     except Exception:
         comments = ""
 
-    # Update record
     status_val = "approved" if decision == "Approve" else "denied"
     _update_ad(ad_id, lambda r: r.update({
         "status": status_val,
@@ -244,7 +241,6 @@ async def advertisement_requests(ctx):
     }))
     final = next((r for r in _load_ads() if r["id"] == ad_id), None)
 
-    # Post if approved
     if final and status_val == "approved":
         ad_channel = discord.utils.get(ctx.guild.text_channels, name="approved-ads")
         if ad_channel:
@@ -253,7 +249,6 @@ async def advertisement_requests(ctx):
             except Exception as e:
                 await ctx.send(f"⚠️ Failed to post advertisement: {e}")
 
-    # Log to advertisement-logs
     log_channel = discord.utils.get(ctx.guild.text_channels, name="advertisement-logs")
     if final:
         c = discord.Color.green() if final["status"] == "approved" else discord.Color.red()
@@ -276,7 +271,6 @@ async def advertisement_requests(ctx):
         else:
             await ctx.send("⚠️ Channel **#advertisement-logs** not found.")
 
-    # DM submitter
     user = ctx.guild.get_member(final["user_id"]) if final else None
     if user:
         try:
