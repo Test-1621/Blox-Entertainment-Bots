@@ -3,19 +3,21 @@ import discord
 from discord.ext import commands
 from datetime import datetime
 import aiohttp
-import json
-from config import Config  # Assumes Config.VERIFICATION_DATA_FILE exists
-
-# Your existing verification manager
-from verification_manager import VerificationManager
+from verification_manager import VerificationManager  # updated version using Supabase
 
 # ===== TOKEN (Render Secret) =====
 TOKEN = os.getenv("BOT1_TOKEN")  # Set in Render > Environment > Secrets
+DATABASE_URL = os.getenv("DATABASE_URL")  # Supabase Postgres URL
 
 if TOKEN:
     print("✅ Token loaded from Render secret BOT1_TOKEN.")
 else:
     print("❌ No token found. Set BOT1_TOKEN in Render Environment secrets.")
+
+if DATABASE_URL:
+    print("✅ Database URL loaded from Render secret DATABASE_URL.")
+else:
+    print("❌ No DATABASE_URL found. Set DATABASE_URL in Render Environment secrets.")
 
 # ===== CONFIG (update IDs/names to your server) =====
 GUILD_ID = 1406058084484518021
@@ -91,27 +93,12 @@ def format_verified_at(raw_value) -> str:
     except Exception:
         return "Unknown"
 
-def get_verified_record(discord_id: int) -> dict | None:
-    """Reads the verified user record from the data file, supports old root format."""
-    try:
-        with open(Config.VERIFICATION_DATA_FILE, "r") as f:
-            data = json.load(f)
-            # First try verified_users
-            record = data.get("verified_users", {}).get(str(discord_id))
-            if record:
-                return record
-            # Fallback: check root keys
-            record = data.get(str(discord_id))
-            if record:
-                return record
-    except Exception:
-        pass
-    return None
-
 # ===== EVENTS =====
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
+    if DATABASE_URL:
+        await verification_manager.connect_db(DATABASE_URL)
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -177,8 +164,6 @@ async def check(ctx: commands.Context):
     if log_channel:
         profile_url = roblox_profile_url(roblox_user_id)
         avatar_url = await fetch_headshot_url(roblox_user_id) if roblox_user_id else None
-        verified_record = get_verified_record(ctx.author.id)
-        verified_at_str = format_verified_at(verified_record.get("verified_at") if verified_record else None)
 
         embed = discord.Embed(
             title="User Verified",
@@ -188,7 +173,7 @@ async def check(ctx: commands.Context):
         embed.add_field(name="Discord User", value=f"{ctx.author} ({ctx.author.id})", inline=False)
         embed.add_field(name="Roblox Username", value=roblox_user, inline=True)
         embed.add_field(name="Roblox User ID", value=str(roblox_user_id), inline=True)
-        embed.add_field(name="🕒 Verified at", value=verified_at_str, inline=False)
+        embed.add_field(name="🕒 Verified at", value=format_verified_at(datetime.utcnow()), inline=False)
         if profile_url:
             embed.add_field(name="Roblox Profile", value=f"[View Profile]({profile_url})", inline=False)
             embed.url = profile_url
@@ -215,21 +200,13 @@ async def info(ctx: commands.Context, target: str = None):
         member = guild.get_member(discord_id) or await guild.fetch_member(discord_id)
     else:
         try:
-            with open(Config.VERIFICATION_DATA_FILE, "r") as f:
-                data = json.load(f)
-                for uid, record in data.get("verified_users", {}).items():
-                    if record.get("roblox_username", "").lower() == target.lower():
-                        discord_id = int(uid)
-                        member = guild.get_member(discord_id) or await guild.fetch_member(discord_id)
-                        break
-                if discord_id is None:
-                    for uid, record in data.items():
-                        if uid in ["verified_users", "pending_verifications", "log_channels"]:
-                            continue
-                        if isinstance(record, dict) and record.get("roblox_username", "").lower() == target.lower():
-                            discord_id = int(uid)
-                            member = guild.get_member(discord_id) or await guild.fetch_member(discord_id)
-                            break
+            result = await verification_manager.db.fetchrow(
+                "SELECT discord_id, roblox_username FROM verifications WHERE LOWER(roblox_username) = LOWER($1)",
+                target
+            )
+            if result:
+                discord_id = result["discord_id"]
+                member = guild.get_member(discord_id) or await guild.fetch_member(discord_id)
         except Exception:
             pass
 
@@ -237,9 +214,7 @@ async def info(ctx: commands.Context, target: str = None):
         await ctx.reply(f"❌ No verification record found for {target}.", mention_author=True)
         return
 
-    record = get_verified_record(discord_id)
-    roblox_username = record.get("roblox_username") if record else "Unknown"
-    verified_at_str = format_verified_at(record.get("verified_at") if record else None)
+    roblox_username = result["roblox_username"] if result else "Unknown"
     roblox_user_id = await fetch_roblox_id(roblox_username) if roblox_username else None
     profile_url = roblox_profile_url(roblox_user_id)
     avatar_url = await fetch_headshot_url(roblox_user_id) if roblox_user_id else None
@@ -257,7 +232,7 @@ async def info(ctx: commands.Context, target: str = None):
         embed.add_field(name="Roblox Profile", value=f"[View Profile]({profile_url})", inline=False)
     if avatar_url:
         embed.set_thumbnail(url=avatar_url)
-    embed.add_field(name="🕒 Verified at", value=verified_at_str, inline=False)
+    embed.add_field(name="🕒 Verified at", value=format_verified_at(datetime.utcnow()), inline=False)
 
     await ctx.reply(embed=embed)
 
@@ -301,35 +276,6 @@ async def revoke(ctx: commands.Context, target: str = None):
 
     await ctx.reply(f"✅ Verification revoked for `{target}` and role removed if applicable.", mention_author=True)
 
-    log_channel = bot.get_channel(ADMIN_LOG_CHANNEL_ID)
-    if log_channel:
-        roblox_username = affected_roblox_username if affected_discord_user else (target if not target.startswith("<@") else None)
-        roblox_user_id = await fetch_roblox_id(roblox_username) if roblox_username else None
-        profile_url = roblox_profile_url(roblox_user_id) if roblox_user_id else None
-        avatar_url = await fetch_headshot_url(roblox_user_id) if roblox_user_id else None
-        record = get_verified_record(affected_discord_user.id) if affected_discord_user else None
-        verified_at_str = format_verified_at(record.get("verified_at") if record else None)
-
-        embed = discord.Embed(
-            title="Verification Revoked",
-            color=discord.Color.red(),
-            timestamp=datetime.utcnow()
-        )
-        embed.add_field(name="Admin", value=f"{ctx.author} ({ctx.author.id})", inline=False)
-        if affected_discord_user:
-            embed.add_field(name="Affected Discord User", value=f"{affected_discord_user} ({affected_discord_user.id})", inline=False)
-        if roblox_username:
-            embed.add_field(name="Roblox Username", value=roblox_username, inline=True)
-        if roblox_user_id:
-            embed.add_field(name="Roblox User ID", value=str(roblox_user_id), inline=True)
-        embed.add_field(name="🕒 Verified at", value=verified_at_str, inline=False)
-        if profile_url:
-            embed.add_field(name="Roblox Profile", value=f"[View Profile]({profile_url})", inline=False)
-        if avatar_url:
-            embed.set_thumbnail(url=avatar_url)
-        embed.add_field(name="Target", value=target, inline=False)
-        await log_channel.send(embed=embed)
-
 # ===== PURGE COMMAND =====
 @bot.command()
 @commands.has_role(OWNER_ROLE_NAME)
@@ -341,14 +287,6 @@ async def purge(ctx: commands.Context, amount: int):
     deleted = await ctx.channel.purge(limit=amount + 1)
     await ctx.send(f"✅ Purged {len(deleted) - 1} messages.", delete_after=5)
 
-    log_channel = bot.get_channel(ADMIN_LOG_CHANNEL_ID)
-    if log_channel:
-        embed = discord.Embed(title="Messages Purged", color=discord.Color.orange(), timestamp=datetime.utcnow())
-        embed.add_field(name="Admin", value=f"{ctx.author} ({ctx.author.id})", inline=False)
-        embed.add_field(name="Channel", value=ctx.channel.mention, inline=False)
-        embed.add_field(name="Amount", value=str(amount), inline=False)
-        await log_channel.send(embed=embed)
-
 # ===== RUNNER =====
 async def run_bot():
     if not TOKEN:
@@ -356,3 +294,6 @@ async def run_bot():
         return
     await bot.start(TOKEN)
 
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(run_bot())
