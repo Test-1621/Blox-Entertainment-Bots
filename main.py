@@ -26,3 +26,25 @@ async def start_bots():
 
 if __name__ == "__main__":
     asyncio.run(start_bots())
+from flask import Flask
+import threading
+import os
+
+app = Flask(__name__)
+
+@app.route("/")
+def ping():
+    return "Bot running!"
+
+# Run Flask in a separate thread so it doesn't block your bots
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))  # Render assigns a port in PORT env
+    app.run(host="0.0.0.0", port=port)
+
+threading.Thread(target=run_flask).start()
+
+# Your existing Discord bot code here
+# Example:
+# import bot1
+# import bot2
+# import bot3
