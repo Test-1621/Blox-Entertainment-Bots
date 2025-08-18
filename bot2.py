@@ -87,9 +87,7 @@ def truncate_field(text, limit=1024):
     if text is None:
         return "None"
     return text if len(text) <= limit else text[:limit-3] + "..."
-
-# ===== message command and rest of the bot code remains unchanged =====
-
+# ===== message command =====
 @bot.command()
 @commands.has_role(OWNER_ROLE_NAME)
 async def message(ctx):
