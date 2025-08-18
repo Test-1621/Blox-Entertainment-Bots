@@ -9,17 +9,13 @@ from config import Config  # Assumes Config.VERIFICATION_DATA_FILE exists
 # Your existing verification manager
 from verification_manager import VerificationManager
 
-# ===== TOKEN (robust: tries multiple names) =====
-TOKEN = (
-    os.getenv("DISCORD_TOKEN")
-    or os.getenv("TOKEN1_BOT")
-    or os.getenv("DISCORD_BOT_TOKEN")
-)
+# ===== TOKEN (Render Secret) =====
+TOKEN = os.getenv("BOT1_TOKEN")  # Set in Render > Environment > Secrets
 
 if TOKEN:
-    print("✅ Token loaded (DISCORD_TOKEN/TOKEN1_BOT/DISCORD_BOT_TOKEN).")
+    print("✅ Token loaded from Render secret BOT1_TOKEN.")
 else:
-    print("❌ No token found. Set DISCORD_TOKEN (or TOKEN1_BOT / DISCORD_BOT_TOKEN) in Secrets/Env.")
+    print("❌ No token found. Set BOT1_TOKEN in Render Environment secrets.")
 
 # ===== CONFIG (update IDs/names to your server) =====
 GUILD_ID = 1406058084484518021
@@ -310,7 +306,7 @@ async def revoke(ctx: commands.Context, target: str = None):
 
     log_channel = bot.get_channel(ADMIN_LOG_CHANNEL_ID)
     if log_channel:
-        roblox_username = affected_roblox_username if affected_roblox_username else (target if not target.startswith("<@") else None)
+        roblox_username = affected_roblox_username if affected_discord_user else (target if not target.startswith("<@") else None)
         roblox_user_id = await fetch_roblox_id(roblox_username) if roblox_username else None
         profile_url = roblox_profile_url(roblox_user_id) if roblox_user_id else None
         avatar_url = await fetch_headshot_url(roblox_user_id) if roblox_user_id else None
@@ -365,5 +361,5 @@ async def run_bot():
 if __name__ == "__main__":
     import asyncio
     if not TOKEN:
-        raise SystemExit("❌ No token set. Set DISCORD_TOKEN (or TOKEN1_BOT/DISCORD_BOT_TOKEN).")
+        raise SystemExit("❌ No token set. Set BOT1_TOKEN in Render Environment secrets.")
     asyncio.run(run_bot())
