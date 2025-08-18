@@ -357,9 +357,3 @@ async def run_bot():
         print("❌ bot1: No token — not starting.")
         return
     await bot.start(TOKEN)
-
-if __name__ == "__main__":
-    import asyncio
-    if not TOKEN:
-        raise SystemExit("❌ No token set. Set BOT1_TOKEN in Render Environment secrets.")
-    asyncio.run(run_bot())
