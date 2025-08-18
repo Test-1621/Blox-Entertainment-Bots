@@ -8,7 +8,7 @@ from datetime import datetime
 BOT_NAME = "Blox Entertainment Information"
 BOT_PREFIX = "!"
 OWNER_ROLE_NAME = "Blox Entertainment Staff"
-LOG_CHANNEL_NAME = "administration-logs"  # name of the logging channel
+LOG_CHANNEL_NAME = "administration-logs"
 
 # ===== TOKEN (robust: tries multiple environment variable names) =====
 TOKEN = (
@@ -43,7 +43,6 @@ color_map = {
 }
 
 async def ask_user(ctx, question, timeout=120):
-    """Send a reply and wait for user's response in the same channel."""
     await ctx.reply(question, mention_author=True)
     def check(m):
         return m.author == ctx.author and m.channel == ctx.channel and not m.author.bot
@@ -53,6 +52,7 @@ async def ask_user(ctx, question, timeout=120):
     except asyncio.TimeoutError:
         await ctx.reply("⌛ You took too long to reply. Operation cancelled.", mention_author=True)
         return None
+
 class ColorSelect(Select):
     def __init__(self, embed_data):
         options = [
@@ -82,7 +82,6 @@ class ChannelSelect(Select):
         await interaction.response.send_message("✅ Channel selected.", ephemeral=True)
 
 def truncate_field(text, limit=1024):
-    """Truncate text for embed fields to avoid Discord limit."""
     if text is None:
         return "None"
     return text if len(text) <= limit else text[:limit-3] + "..."
@@ -101,20 +100,17 @@ async def message(ctx):
 
     # 1. Ask for Title
     title = await ask_user(ctx, "Please reply with the embed **title** (or type 'none' to skip):")
-    if title is None:
-        return
+    if title is None: return
     embed_data["title"] = None if title.lower() == "none" else title
 
     # 2. Ask for Description
     description = await ask_user(ctx, "Please reply with the embed **description** (or type 'none' to skip):")
-    if description is None:
-        return
+    if description is None: return
     embed_data["description"] = None if description.lower() == "none" else description
 
     # 3. Ask for Footer
     footer = await ask_user(ctx, "Please reply with the embed **footer** (or type 'none' to skip):")
-    if footer is None:
-        return
+    if footer is None: return
     embed_data["footer"] = None if footer.lower() == "none" else footer
 
     # 4. Color select dropdown
@@ -170,7 +166,7 @@ async def message(ctx):
         await channel.send(embed=embed)
         await ctx.reply(f"✅ Embed sent to {channel.mention}!", mention_author=True)
 
-        # 7. Logging to #administration-logs with field truncation
+        # Logging to #administration-logs
         log_channel = discord.utils.get(guild.text_channels, name=LOG_CHANNEL_NAME)
         if log_channel:
             log_embed = discord.Embed(
@@ -185,7 +181,6 @@ async def message(ctx):
             log_embed.add_field(name="Embed Footer", value=truncate_field(embed_data["footer"]), inline=False)
             log_embed.add_field(name="Embed Color", value=embed_data["color"], inline=False)
             log_embed.set_footer(text="Embed Logging System")
-
             try:
                 await log_channel.send(embed=log_embed)
             except discord.HTTPException as e:
