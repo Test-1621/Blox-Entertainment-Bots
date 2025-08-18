@@ -1,26 +1,29 @@
 import random
 import aiohttp
-import json
-import os
 import asyncio
-from roblox_api import RobloxAPI
-from config import Config
 import discord
 from datetime import datetime
+import asyncpg
+from roblox_api import RobloxAPI
+from config import Config
 
 class VerificationManager:
     def __init__(self, bot):
         self.bot = bot
+        self.db = None
         self.codes = {}  # discord_id: code
         self.roblox_usernames = {}  # discord_id: roblox_username
-        self.data_file = Config.VERIFICATION_DATA_FILE
-        os.makedirs("data", exist_ok=True)
-        if not os.path.exists(self.data_file):
-            with open(self.data_file, "w") as f:
-                json.dump({}, f)
-
         self.roblox_api = RobloxAPI()
 
+    # -------------------- Database Connection --------------------
+    async def connect_db(self, DATABASE_URL):
+        try:
+            self.db = await asyncpg.connect(DATABASE_URL)
+            print("✅ Connected to Supabase database!")
+        except Exception as e:
+            print(f"❌ Failed to connect to database: {e}")
+
+    # -------------------- Verification Start --------------------
     async def start_verification(self, ctx, roblox_username):
         code = str(random.randint(10**(Config.CODE_LENGTH-1), 10**Config.CODE_LENGTH -1))
         self.codes[ctx.author.id] = code
@@ -54,6 +57,7 @@ class VerificationManager:
             self.codes.pop(discord_id, None)
             self.roblox_usernames.pop(discord_id, None)
 
+    # -------------------- Check Verification --------------------
     async def check_verification(self, ctx):
         discord_id = ctx.author.id
         code = self.codes.get(discord_id)
@@ -77,7 +81,7 @@ class VerificationManager:
 
         if code in bio:
             print(f"[CHECK_VERIF] Code found in bio! Verification successful.")
-            self.save_verification(discord_id, roblox_username)
+            await self.save_verification(discord_id, roblox_username)
             self.codes.pop(discord_id, None)
             self.roblox_usernames.pop(discord_id, None)
             return True, roblox_username, user_data['id']
@@ -85,106 +89,82 @@ class VerificationManager:
             print(f"[CHECK_VERIF] Code NOT found in bio.")
             return False, None, None
 
-    def save_verification(self, discord_id, roblox_username):
+    # -------------------- Save Verification --------------------
+    async def save_verification(self, discord_id, roblox_username):
+        query = """
+            INSERT INTO verifications(discord_id, roblox_username, verified_at, BEcredits)
+            VALUES($1, $2, NOW(), 5)
+            ON CONFLICT (discord_id) DO UPDATE
+            SET roblox_username = $2, verified_at = NOW()
+        """
         try:
-            with open(self.data_file, "r") as f:
-                data = json.load(f)
+            await self.db.execute(query, discord_id, roblox_username)
+            print(f"[SAVE_VERIF] Saved verification: Discord ID {discord_id} -> Roblox '{roblox_username}' with 5 BEcredits")
         except Exception as e:
-            print(f"[SAVE_VERIF] Failed to read data file: {e}")
-            data = {}
+            print(f"[SAVE_VERIF] Failed to save to database: {e}")
 
-        if not isinstance(roblox_username, str):
-            roblox_username = str(roblox_username)
-
-        # Save as dictionary with verified_at timestamp
-        data[str(discord_id)] = {
-            "roblox_username": roblox_username,
-            "verified_at": datetime.utcnow().isoformat()
-        }
-
-        try:
-            with open(self.data_file, "w") as f:
-                json.dump(data, f, indent=2)
-            print(f"[SAVE_VERIF] Saved verification: Discord ID {discord_id} -> Roblox '{roblox_username}'")
-        except Exception as e:
-            print(f"[SAVE_VERIF] Failed to write data file: {e}")
-
+    # -------------------- Revoke Verification --------------------
     async def revoke_verification(self, guild, target, verified_role_name):
-        print(f"[REVOKE_VERIF] Attempting to revoke verification for target '{target}'")
-
-        try:
-            with open(self.data_file, "r") as f:
-                data = json.load(f)
-        except Exception as e:
-            print(f"[REVOKE_VERIF] Failed to read data file: {e}")
-            return False, None, None
-
-        affected_discord_user = None
-        affected_roblox_username = None
+        discord_id = None
+        roblox_username = None
 
         # Discord mention check
         if target.startswith("<@") and target.endswith(">"):
+            discord_id = int(target.strip("<@!>"))
+
+        # Lookup by Roblox username if no mention
+        if discord_id is None:
             try:
-                discord_id = int(target.strip("<@!>"))
-                if str(discord_id) in data:
-                    affected_roblox_username = data.pop(str(discord_id)).get("roblox_username")
-                    member = guild.get_member(discord_id)
-                    if member is None:
-                        try:
-                            member = await guild.fetch_member(discord_id)
-                        except Exception:
-                            member = None
-                    if member:
-                        affected_discord_user = member
-                    await self.remove_verified_role(guild, discord_id, verified_role_name)
-                    with open(self.data_file, "w") as f:
-                        json.dump(data, f, indent=2)
-                    print(f"[REVOKE_VERIF] Revoked verification for Discord ID {discord_id}")
-                    return True, affected_discord_user, affected_roblox_username
+                result = await self.db.fetchrow(
+                    "SELECT discord_id, roblox_username FROM verifications WHERE LOWER(roblox_username) = LOWER($1)",
+                    target
+                )
+                if result:
+                    discord_id = result["discord_id"]
+                    roblox_username = result["roblox_username"]
             except Exception as e:
-                print(f"[REVOKE_VERIF] Error processing Discord mention: {e}")
+                print(f"[REVOKE_VERIF] Database lookup failed: {e}")
                 return False, None, None
 
-        # Roblox username lookup (case insensitive)
-        lowered_target = target.lower()
-        for discord_id, record in list(data.items()):
-            if isinstance(record, dict) and record.get("roblox_username", "").lower() == lowered_target:
+        if discord_id is None:
+            return False, None, None
+
+        # Remove role from Discord member
+        member = guild.get_member(discord_id) or await guild.fetch_member(discord_id)
+        if member:
+            role = discord.utils.get(guild.roles, name=verified_role_name)
+            if role and role in member.roles:
                 try:
-                    affected_roblox_username = data.pop(discord_id).get("roblox_username")
-                    member = guild.get_member(int(discord_id))
-                    if member is None:
-                        try:
-                            member = await guild.fetch_member(int(discord_id))
-                        except Exception:
-                            member = None
-                    if member:
-                        affected_discord_user = member
-                    await self.remove_verified_role(guild, int(discord_id), verified_role_name)
-                    with open(self.data_file, "w") as f:
-                        json.dump(data, f, indent=2)
-                    print(f"[REVOKE_VERIF] Revoked verification for Roblox username '{target}'")
-                    return True, affected_discord_user, affected_roblox_username
+                    await member.remove_roles(role, reason="Verification revoked")
+                    print(f"[REMOVE_ROLE] Removed role '{verified_role_name}' from {member}")
                 except Exception as e:
-                    print(f"[REVOKE_VERIF] Error processing Roblox username: {e}")
-                    return False, None, None
+                    print(f"[REMOVE_ROLE] Failed to remove role: {e}")
 
-        print(f"[REVOKE_VERIF] No verification record found for target '{target}'")
-        return False, None, None
+        # Delete from database
+        try:
+            await self.db.execute("DELETE FROM verifications WHERE discord_id = $1", discord_id)
+            print(f"[REVOKE_VERIF] Revoked verification for Discord ID {discord_id}")
+        except Exception as e:
+            print(f"[REVOKE_VERIF] Failed to delete from database: {e}")
+            return False, member, roblox_username
 
-    async def remove_verified_role(self, guild, discord_id, verified_role_name):
-        member = guild.get_member(discord_id)
-        if member is None:
-            try:
-                member = await guild.fetch_member(discord_id)
-            except Exception:
-                print(f"[REMOVE_ROLE] Could not find member with ID {discord_id}")
-                return
-        role = discord.utils.get(guild.roles, name=verified_role_name)
-        if role and role in member.roles:
-            try:
-                await member.remove_roles(role, reason="Verification revoked")
-                print(f"[REMOVE_ROLE] Removed role '{verified_role_name}' from {member}")
-            except Exception as e:
-                print(f"[REMOVE_ROLE] Failed to remove role: {e}")
-        else:
-            print(f"[REMOVE_ROLE] Role '{verified_role_name}' not found on member {member}")
+        return True, member, roblox_username
+
+    # -------------------- BEcredits Management --------------------
+    async def adjust_becredits(self, discord_id, amount):
+        """Increase or decrease BEcredits. Can be negative to deduct."""
+        try:
+            await self.db.execute(
+                "UPDATE verifications SET BEcredits = GREATEST(BEcredits + $1, 0) WHERE discord_id = $2",
+                amount, discord_id
+            )
+        except Exception as e:
+            print(f"[BEcredits] Failed to adjust credits for {discord_id}: {e}")
+
+    async def get_becredits(self, discord_id):
+        try:
+            row = await self.db.fetchrow("SELECT BEcredits FROM verifications WHERE discord_id = $1", discord_id)
+            return row["BEcredits"] if row else 0
+        except Exception as e:
+            print(f"[BEcredits] Failed to fetch credits for {discord_id}: {e}")
+            return 0
