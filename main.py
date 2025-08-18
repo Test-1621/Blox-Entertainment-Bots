@@ -18,7 +18,8 @@ def ping():
 # Run Flask in a separate thread so it doesn't block your bots
 def run_flask():
     port = int(os.environ.get("PORT", 10000))  # Render assigns a port in PORT env
-    app.run(host="0.0.0.0", port=port)
+    # Added use_reloader=False to prevent duplicate runs
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 # Start Flask thread immediately
 threading.Thread(target=run_flask, daemon=True).start()
