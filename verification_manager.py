@@ -28,17 +28,26 @@ class VerificationManager:
         if not self.db_url:
             print("❌ DATABASE_URL not set. Supabase/Postgres connection failed.")
             return
-        self.pool = await asyncpg.create_pool(self.db_url)
-        async with self.pool.acquire() as conn:
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS verifications (
-                    discord_id BIGINT PRIMARY KEY,
-                    roblox_username TEXT,
-                    verified_at TIMESTAMP,
-                    BEcredits INT DEFAULT 5
-                )
-            """)
-        print("✅ Connected to database and ensured verifications table exists.")
+        try:
+            self.pool = await asyncpg.create_pool(self.db_url)
+            async with self.pool.acquire() as conn:
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS verifications (
+                        discord_id BIGINT PRIMARY KEY,
+                        roblox_username TEXT,
+                        verified_at TIMESTAMP,
+                        BEcredits INT DEFAULT 5
+                    )
+                """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS credits_received (
+                        roblox_username TEXT PRIMARY KEY
+                    )
+                """)
+            print("✅ Connected to database and ensured tables exist.")
+        except Exception as e:
+            print(f"❌ Failed to connect to DB: {e}")
+            self.pool = None
 
     async def start_verification(self, ctx, roblox_username):
         code = str(random.randint(10**(Config.CODE_LENGTH-1), 10**Config.CODE_LENGTH -1))
@@ -113,6 +122,47 @@ class VerificationManager:
             print(f"[SAVE_VERIF] Saved verification for {discord_id} -> {roblox_username}")
         except Exception as e:
             print(f"[SAVE_VERIF] DB error: {e}")
+
+    async def has_received_credits(self, roblox_username: str):
+        """Check if the user has already received 5 credits."""
+        if self.pool:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    SELECT roblox_username FROM credits_received WHERE roblox_username=$1
+                """, roblox_username)
+                return bool(row)
+        else:
+            try:
+                file = os.path.join("data", "received_credits.json")
+                with open(file, "r") as f:
+                    data = json.load(f)
+                    return roblox_username in data
+            except Exception:
+                return False
+
+    async def mark_received_credits(self, roblox_username: str):
+        """Mark user as having received the 5 credits."""
+        if self.pool:
+            async with self.pool.acquire() as conn:
+                await conn.execute("""
+                    INSERT INTO credits_received(roblox_username)
+                    VALUES($1)
+                    ON CONFLICT DO NOTHING
+                """, roblox_username)
+        else:
+            try:
+                file = os.path.join("data", "received_credits.json")
+                try:
+                    with open(file, "r") as f:
+                        data = json.load(f)
+                except Exception:
+                    data = []
+                if roblox_username not in data:
+                    data.append(roblox_username)
+                    with open(file, "w") as f:
+                        json.dump(data, f, indent=2)
+            except Exception as e:
+                print(f"[CREDITS_FILE] Failed to mark {roblox_username}: {e}")
 
     async def revoke_verification(self, guild, target, verified_role_name):
         affected_discord_user = None
