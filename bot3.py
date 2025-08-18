@@ -289,7 +289,7 @@ async def advertisement_requests(ctx):
 # ===== CHANNEL PURGE TASK =====
 @tasks.loop(minutes=1)
 async def purge_channels():
-    channel_names = ["verify", "advertise-here"]
+    channel_names = ["verify", "advertisement-commands"]
     for name in channel_names:
         channel = discord.utils.get(bot.get_all_channels(), name=name)
         if channel and isinstance(channel, discord.TextChannel):
