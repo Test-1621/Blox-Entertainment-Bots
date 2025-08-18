@@ -5,8 +5,25 @@ print("BOT3_TOKEN:", os.getenv("BOT3_ADVERTISE"))
 
 import asyncio
 import importlib
+from flask import Flask
+import threading
 
-# List of your bot files without the .py extension
+# ===== FLASK APP =====
+app = Flask(__name__)
+
+@app.route("/")
+def ping():
+    return "Bot running!"
+
+# Run Flask in a separate thread so it doesn't block your bots
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))  # Render assigns a port in PORT env
+    app.run(host="0.0.0.0", port=port)
+
+# Start Flask thread immediately
+threading.Thread(target=run_flask, daemon=True).start()
+
+# ===== DISCORD BOTS =====
 BOT_MODULES = ["bot1", "bot2", "bot3"]
 
 async def start_bots():
@@ -26,22 +43,6 @@ async def start_bots():
 
 if __name__ == "__main__":
     asyncio.run(start_bots())
-from flask import Flask
-import threading
-import os
-
-app = Flask(__name__)
-
-@app.route("/")
-def ping():
-    return "Bot running!"
-
-# Run Flask in a separate thread so it doesn't block your bots
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))  # Render assigns a port in PORT env
-    app.run(host="0.0.0.0", port=port)
-
-threading.Thread(target=run_flask).start()
 
 # Your existing Discord bot code here
 # Example:
