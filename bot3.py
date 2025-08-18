@@ -16,7 +16,7 @@ TOKEN = (
 if TOKEN:
     print("✅ Token loaded (BOT3_ADVERTISE / BOT3_TOKEN / DISCORD_BOT3_TOKEN).")
 else:
-    raise ValueError("❌ No token found. Set BOT3_ADVERTISE, BOT3_TOKEN, or DISCORD_BOT3_TOKEN in Secrets/Env.")
+    print("❌ No token found. Set BOT3_ADVERTISE, BOT3_TOKEN, or DISCORD_BOT3_TOKEN in Secrets/Env.")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -61,6 +61,9 @@ def _update_ad(ad_id, updater):
 def _guild_pending_ads(guild_id):
     return [a for a in _load_ads() if a.get("guild_id") == guild_id and a.get("status") == "pending"]
 
+# ===== STAFF CHECK =====
+def _is_staff(member: discord.Member) -> bool:
+    return any(r.id == ROLE_ID_STAFF for r in member.roles)
 # ===== COMMAND: !advertise =====
 @bot.command()
 async def advertise(ctx):
@@ -69,8 +72,6 @@ async def advertise(ctx):
         return
 
     user_id_str = str(ctx.author.id)
-
-    # Load verified users
     try:
         with open(verif_manager.data_file, "r") as f:
             VERIFICATIONS = json.load(f)
@@ -83,7 +84,6 @@ async def advertise(ctx):
 
     roblox_username = VERIFICATIONS[user_id_str]
 
-    # Ask for advertisement text via DM
     try:
         dm = await ctx.author.create_dm()
         await dm.send(
@@ -104,7 +104,6 @@ async def advertise(ctx):
         await ctx.reply("⏱️ Advertisement cancelled (no message provided).", mention_author=True)
         return
 
-    # Save advertisement request
     ad_id = f"{ctx.guild.id}-{ctx.author.id}-{int(datetime.utcnow().timestamp())}"
     record = {
         "id": ad_id,
@@ -121,7 +120,6 @@ async def advertise(ctx):
     }
     _append_ad(record)
 
-    # Log to #advertisement-requests
     ad_log_channel = discord.utils.get(ctx.guild.text_channels, name="advertisement-requests")
     if ad_log_channel:
         emb = discord.Embed(
@@ -141,10 +139,8 @@ async def advertise(ctx):
             print(f"[AD_LOG] Failed to send embed: {e}")
 
     await ctx.reply("✅ Your advertisement request has been submitted! You’ll receive a DM when it’s reviewed.", mention_author=True)
-# ===== COMMAND: !advertisement_requests =====
-def _is_staff(member: discord.Member) -> bool:
-    return any(r.id == ROLE_ID_STAFF for r in member.roles)
 
+# ===== COMMAND: !advertisement_requests =====
 class AdSelect(Select):
     def __init__(self, pending_records, guild: discord.Guild):
         options = []
@@ -168,7 +164,6 @@ class DecisionSelect(Select):
 
 @bot.command()
 async def advertisement_requests(ctx):
-    """Process pending advertisements (Staff only)."""
     if ctx.channel.name != "staff-commands":
         await ctx.reply("❌ Use this command in #staff-commands.", mention_author=True)
         return
@@ -182,7 +177,7 @@ async def advertisement_requests(ctx):
         await ctx.reply("📭 No pending advertisement requests.", mention_author=True)
         return
 
-    # Step 1: select request
+    # Select request
     selector = AdSelect(pending, ctx.guild)
     view1 = View(timeout=90)
     view1.add_item(selector)
@@ -204,7 +199,7 @@ async def advertisement_requests(ctx):
         await ctx.send("⚠️ That advertisement request is no longer pending.")
         return
 
-    # Step 2: decision dropdown
+    # Decision dropdown
     dec_select = DecisionSelect()
     view2 = View(timeout=60)
     view2.add_item(dec_select)
@@ -219,12 +214,12 @@ async def advertisement_requests(ctx):
     try:
         inter2 = await bot.wait_for("interaction", check=_dec_done, timeout=60)
         await inter2.response.defer()
-        decision = dec_select.values[0]  # "Approve" or "Deny"
+        decision = dec_select.values[0]
     except Exception:
         await msg2.edit(content="⏱️ Timed out. Decision not recorded.", view=None)
         return
 
-    # Step 3: comments (optional)
+    # Comments (optional)
     await ctx.send("💬 Enter any **comments** for this decision (or type `none`). You have 2 minutes.")
 
     def _comment_check(m: discord.Message):
@@ -238,7 +233,7 @@ async def advertisement_requests(ctx):
     except Exception:
         comments = ""
 
-    # Update record (status + processor info)
+    # Update record
     status_val = "approved" if decision == "Approve" else "denied"
     _update_ad(ad_id, lambda r: r.update({
         "status": status_val,
@@ -249,7 +244,7 @@ async def advertisement_requests(ctx):
     }))
     final = next((r for r in _load_ads() if r["id"] == ad_id), None)
 
-    # If approved, post the advertisement
+    # Post if approved
     if final and status_val == "approved":
         ad_channel = discord.utils.get(ctx.guild.text_channels, name="approved-ads")
         if ad_channel:
@@ -258,7 +253,7 @@ async def advertisement_requests(ctx):
             except Exception as e:
                 await ctx.send(f"⚠️ Failed to post advertisement: {e}")
 
-    # Log to #advertisement-logs
+    # Log to advertisement-logs
     log_channel = discord.utils.get(ctx.guild.text_channels, name="advertisement-logs")
     if final:
         c = discord.Color.green() if final["status"] == "approved" else discord.Color.red()
@@ -276,15 +271,12 @@ async def advertisement_requests(ctx):
             color=c,
             timestamp=datetime.utcnow()
         )
-        try:
-            if log_channel:
-                await log_channel.send(embed=emb)
-            else:
-                await ctx.send("⚠️ Channel **#advertisement-logs** not found. Please create it.")
-        except Exception as e:
-            await ctx.send(f"⚠️ Failed to send log: `{e}`")
+        if log_channel:
+            await log_channel.send(embed=emb)
+        else:
+            await ctx.send("⚠️ Channel **#advertisement-logs** not found.")
 
-    # DM the submitter
+    # DM submitter
     user = ctx.guild.get_member(final["user_id"]) if final else None
     if user:
         try:
@@ -317,14 +309,9 @@ async def on_ready():
     purge_channels.start()
     print(f"[BOT3] Logged in as {bot.user} (ID: {bot.user.id})")
 
+# ===== RUN BOT =====
 async def run_bot():
     if not TOKEN:
         print("❌ bot3: No token — not starting.")
         return
     await bot.start(TOKEN)
-
-if __name__ == "__main__":
-    import asyncio
-    if not TOKEN:
-        raise SystemExit("❌ No token set. Set BOT3_ADVERTISE, BOT3_TOKEN, or DISCORD_BOT3_TOKEN.")
-    asyncio.run(run_bot())
