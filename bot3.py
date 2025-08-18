@@ -5,6 +5,8 @@ import os
 import json
 from datetime import datetime
 from verification_manager import VerificationManager  # Keep your existing verification manager
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 # ===== TOKEN HANDLING =====
 TOKEN = (
@@ -65,10 +67,42 @@ def _guild_pending_ads(guild_id):
 def _is_staff(member: discord.Member) -> bool:
     return any(r.id == ROLE_ID_STAFF for r in member.roles)
 
+# ===== POSTGRES CONNECTION =====
+POSTGRES_URL = os.getenv("BOT3_POSTGRES_URL")  # put your connection string here in env
+conn = psycopg2.connect(POSTGRES_URL, cursor_factory=RealDictCursor)
+
+# ===== ENSURE CREDITS TABLE =====
+with conn.cursor() as cur:
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS be_credits (
+            discord_id BIGINT PRIMARY KEY,
+            roblox_username TEXT UNIQUE NOT NULL,
+            credits INT NOT NULL DEFAULT 5
+        )
+    """)
+    conn.commit()
+
+# ===== COMMAND: !credits =====
+@bot.command()
+async def credits(ctx):
+    # Only allow in advertisement-commands channel
+    if ctx.channel.id != 1406102298463043636:
+        await ctx.reply("❌ You can only use this command in #advertisement-commands.", mention_author=True)
+        return
+
+    user_id = ctx.author.id
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT credits FROM be_credits WHERE discord_id = %s", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            await ctx.reply("ℹ️ You don’t have any BEcredits yet. Verify your Roblox account to get started!", mention_author=True)
+            return
+        await ctx.reply(f"💳 You currently have **{row['credits']} BEcredits** remaining.", mention_author=True)
+
 # ===== COMMAND: !advertise =====
 @bot.command()
 async def advertise(ctx):
-    if ctx.channel.name != "advertisement-commands":
+    if ctx.channel.id != 1406102298463043636:
         await ctx.reply("❌ You can only use this command in #advertisement-commands.", mention_author=True)
         return
 
@@ -84,6 +118,30 @@ async def advertise(ctx):
         return
 
     roblox_username = VERIFICATIONS[user_id_str]
+
+    # ==== BE CREDITS CHECK ====
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT credits FROM be_credits WHERE roblox_username = %s", (roblox_username,))
+        row = cur.fetchone()
+        if not row:
+            # First time verified -> give 5 credits
+            cur.execute(
+                "INSERT INTO be_credits (discord_id, roblox_username, credits) VALUES (%s, %s, 5)",
+                (ctx.author.id, roblox_username)
+            )
+            conn.commit()
+            remaining_credits = 5
+        else:
+            remaining_credits = row["credits"]
+
+        if remaining_credits <= 0:
+            await ctx.reply("❌ You have no BEcredits left. Purchase more to advertise.", mention_author=True)
+            return
+
+        # Deduct 1 credit
+        cur.execute("UPDATE be_credits SET credits = credits - 1 WHERE roblox_username = %s", (roblox_username,))
+        conn.commit()
+        remaining_credits -= 1
 
     try:
         dm = await ctx.author.create_dm()
@@ -129,7 +187,8 @@ async def advertise(ctx):
                 f"**User:** {ctx.author} ({ctx.author.id})\n"
                 f"**Roblox Username:** {roblox_username}\n"
                 f"**Advertisement:** {ad_text}\n"
-                f"**Request ID:** `{ad_id}`"
+                f"**Request ID:** `{ad_id}`\n"
+                f"💳 Remaining BEcredits: {remaining_credits}"
             ),
             color=discord.Color.yellow(),
             timestamp=datetime.utcnow()
@@ -139,7 +198,7 @@ async def advertise(ctx):
         except Exception as e:
             print(f"[AD_LOG] Failed to send embed: {e}")
 
-    await ctx.reply("✅ Your advertisement request has been submitted! You’ll receive a DM when it’s reviewed.", mention_author=True)
+    await ctx.reply(f"✅ Your advertisement request has been submitted! You have **{remaining_credits} BEcredits** remaining.", mention_author=True)
 
 # ===== COMMAND: !adreq =====
 class AdSelect(Select):
