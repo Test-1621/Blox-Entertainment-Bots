@@ -53,7 +53,6 @@ async def ask_user(ctx, question, timeout=120):
     except asyncio.TimeoutError:
         await ctx.reply("⌛ You took too long to reply. Operation cancelled.", mention_author=True)
         return None
-
 class ColorSelect(Select):
     def __init__(self, embed_data):
         options = [
@@ -87,6 +86,7 @@ def truncate_field(text, limit=1024):
     if text is None:
         return "None"
     return text if len(text) <= limit else text[:limit-3] + "..."
+
 # ===== message command =====
 @bot.command()
 @commands.has_role(OWNER_ROLE_NAME)
@@ -198,13 +198,9 @@ async def message(ctx):
 async def on_ready():
     print(f"✅ Logged in as {BOT_NAME} ({bot.user})")
 
+# ===== RUNNER =====
 async def run_bot():
     if not TOKEN:
         print("❌ bot2: No token — not starting.")
         return
     await bot.start(TOKEN)
-
-if __name__ == "__main__":
-    if not TOKEN:
-        raise SystemExit("❌ No token set. Set INFORMATION_TICKET (or BOT2_TOKEN / DISCORD_BOT_TOKEN).")
-    asyncio.run(run_bot())
