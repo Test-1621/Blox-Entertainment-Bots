@@ -141,7 +141,7 @@ async def advertise(ctx):
 
     await ctx.reply("✅ Your advertisement request has been submitted! You’ll receive a DM when it’s reviewed.", mention_author=True)
 
-# ===== COMMAND: !advertisement_requests =====
+# ===== COMMAND: !adreq =====
 class AdSelect(Select):
     def __init__(self, pending_records, guild: discord.Guild):
         options = []
@@ -164,9 +164,9 @@ class DecisionSelect(Select):
         super().__init__(placeholder="Decision", options=options, min_values=1, max_values=1)
 
 @bot.command()
-async def advertisement_requests(ctx):
-    if ctx.channel.name != "staff-commands":
-        await ctx.reply("❌ Use this command in #staff-commands.", mention_author=True)
+async def adreq(ctx):
+    if ctx.channel.name != "commands":
+        await ctx.reply("❌ Use this command in #commands.", mention_author=True)
         return
 
     if not isinstance(ctx.author, discord.Member) or not _is_staff(ctx.author):
@@ -191,7 +191,7 @@ async def advertisement_requests(ctx):
         await inter1.response.defer()
         ad_id = selector.values[0]
     except Exception:
-        await msg1.edit(content="⏱️ Timed out. Try `!advertisement_requests` again.", view=None)
+        await msg1.edit(content="⏱️ Timed out. Try `!adreq` again.", view=None)
         return
 
     chosen = next((r for r in _guild_pending_ads(ctx.guild.id) if r["id"] == ad_id), None)
