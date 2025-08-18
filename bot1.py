@@ -195,13 +195,13 @@ async def check(ctx: commands.Context):
         if avatar_url:
             embed.set_thumbnail(url=avatar_url)
         await log_channel.send(embed=embed)
-# ===== INFO COMMAND (FIXED + ADMIN LOGGING) =====
+
+# ===== INFO COMMAND =====
 @bot.command()
 async def info(ctx: commands.Context, target: str = None):
     if OWNER_ROLE_NAME not in [role.name for role in getattr(ctx.author, "roles", [])]:
         await ctx.reply("❌ You do not have permission to use this command.", mention_author=True)
         return
-
     if not target:
         await ctx.reply("❌ Please provide a Roblox username or Discord mention.", mention_author=True)
         return
@@ -210,7 +210,6 @@ async def info(ctx: commands.Context, target: str = None):
     member = None
     guild = bot.get_guild(GUILD_ID) or await bot.fetch_guild(GUILD_ID)
 
-    # Check if target is a Discord mention
     if target.startswith("<@") and target.endswith(">"):
         discord_id = int(target.replace("<@", "").replace(">", "").replace("!", ""))
         member = guild.get_member(discord_id) or await guild.fetch_member(discord_id)
@@ -262,7 +261,6 @@ async def info(ctx: commands.Context, target: str = None):
 
     await ctx.reply(embed=embed)
 
-    # Log to admin channel
     log_channel = bot.get_channel(ADMIN_LOG_CHANNEL_ID)
     if log_channel:
         log_embed = discord.Embed(
@@ -281,13 +279,12 @@ async def info(ctx: commands.Context, target: str = None):
             log_embed.set_thumbnail(url=avatar_url)
         await log_channel.send(embed=log_embed)
 
-# ===== REVOKE COMMAND (FIXED SAFE LOGGING) =====
+# ===== REVOKE COMMAND =====
 @bot.command()
 async def revoke(ctx: commands.Context, target: str = None):
     if target is None:
         await ctx.reply("❌ Please provide a Roblox username or Discord mention. Example: `!revoke Builderman` or `!revoke @User`", mention_author=True)
         return
-
     if OWNER_ROLE_NAME not in [role.name for role in getattr(ctx.author, "roles", [])]:
         await ctx.reply("❌ You do not have permission to use this command.", mention_author=True)
         return
@@ -333,6 +330,7 @@ async def revoke(ctx: commands.Context, target: str = None):
         embed.add_field(name="Target", value=target, inline=False)
         await log_channel.send(embed=embed)
 
+# ===== PURGE COMMAND =====
 @bot.command()
 @commands.has_role(OWNER_ROLE_NAME)
 async def purge(ctx: commands.Context, amount: int):
@@ -357,3 +355,4 @@ async def run_bot():
         print("❌ bot1: No token — not starting.")
         return
     await bot.start(TOKEN)
+
