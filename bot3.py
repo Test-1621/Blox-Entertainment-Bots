@@ -68,8 +68,8 @@ def _is_staff(member: discord.Member) -> bool:
 # ===== COMMAND: !advertise =====
 @bot.command()
 async def advertise(ctx):
-    if ctx.channel.name != "advertise-here":
-        await ctx.reply("❌ You can only use this command in #advertise-here.", mention_author=True)
+    if ctx.channel.name != "advertisement-commands":
+        await ctx.reply("❌ You can only use this command in #advertisement-commands.", mention_author=True)
         return
 
     user_id_str = str(ctx.author.id)
